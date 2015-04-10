@@ -10,6 +10,7 @@ import argparse
 import csv
 import datetime
 import os
+import string
 
 prsr_arguments = argparse.ArgumentParser( prog = "mae_vcf_from_gmap_result.py", description = "Output from GMAP is changed to VCF file.", formatter_class = argparse.ArgumentDefaultsHelpFormatter )
 prsr_arguments.add_argument( "str_input_file", help = "Input gmap result file." )
