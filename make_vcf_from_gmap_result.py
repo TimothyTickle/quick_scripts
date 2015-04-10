@@ -28,11 +28,14 @@ lstr_header.append( "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype
 lstr_header.append( "\t".join( [ "#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", str_file ] ) )
 lstr_vcf = []
 
+# Used to complement the bases
+sbuff_complement = string.maketrans( "ACGTacgt", "TGCAtgca" )
+
 # Read in gmap result file
 with open( args.str_input_file, "r" ) as hndl_gmap:
   for lstr_line in csv.reader( hndl_gmap, delimiter = STR_RESULT_DELIMITER ):
       
-      # Ignore blank lines and comments, pull out transcirpt names
+      # Ignore blank lines and comments, pull out transcript names
       if not lstr_line:
         continue
       if lstr_line[0][0] in LSTR_COMMENTS:
@@ -42,9 +45,17 @@ with open( args.str_input_file, "r" ) as hndl_gmap:
 
       # Build up VCF info
       str_chr, str_pos = lstr_line[ 2 ].split(":")
+      ## Manage reverse complement information
+      str_alt, str_ref = lstr_line[ 0 ].split( "/" )
+      if str_chr[ 0 ] == "+":
+          str_chr = str_chr[ 1: ]
+      if str_chr[ 0 ] == "-":
+          str_chr = str_chr[ 1: ]
+          str_alt = str_alt.translate( sbuff_complement )
+          str_ref = str_ref.translate( sbuff_complement )
+      ## Manage VF file name
       if ( len( str_chr ) < 3 ) or not ( str_chr[ 0:3 ].lower() == "chr" ):
         str_chr = "chr" + str_chr
-      str_alt, str_ref = lstr_line[ 0 ].split( "/" )
       lstr_vcf.append( "\t".join( [ str_chr, str_pos, str_transcript_name, str_ref.upper(), str_alt.upper(), ".", "PASS", ".", "GT", "0/1" ] ) )
 
 # Write out file
