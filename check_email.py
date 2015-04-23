@@ -2,7 +2,9 @@
 
 import datetime
 import email
+import hashlib
 import imaplib
+import sciedpiper.commandline
 import os
 
 # Account information, so very bad 
@@ -11,13 +13,13 @@ str_password = ""
 
 # Mailboxes
 str_mail_box = "email_project"
-Str_done_box = "successfully_archived"
-
-# Sucessful archive file
-str_archive_file = "archive.txt"
+str_done_box = "successfully_archived"
 
 # To archive output folder
-str_error_log = "archive_errors.txt"
+str_error_log = "archive.log"
+
+# MD5SUM block size
+C_I_BLOCKSIZE = 128
 
 # Search key for email
 str_subject_key = "Walkup sequencing GET site information: "
@@ -31,24 +33,38 @@ def func_archive( str_message ):
   # Store email to folder/archive
   # Send email to user
 
-  # Move email to another box
-  list_ret_copy = mail.uid( 'COPY', str_muid, str_move_folder )
-  if list_ret_copy[ 0 ] == "OK":
-    mail.uid( 'STORE', str_muid, '+FLAGS', '(|Deleted)' )
-    mail.expunge()
-  return False
+  # Get MD5Sum
+  str_md5sum_before = func_get_md5sum( str_from_path )
+  # Copy file to data safe
+  shutil.copy( src=str_from_path, dst=str_to_path )
+  # Get MD5Sum of moved file
+  str_md5sum_moved = func_get_md5sum( str_to_path )
+
+  # Check the file move
+  if os.path.exists( str_to_path ) and ( str_md5sum_before == str_md5sum_moved ):
+    # Move email to another box
+    list_ret_copy = mail.uid( 'COPY', str_muid, str_move_folder )
+    if list_ret_copy[ 0 ] == "OK":
+      mail.uid( 'STORE', str_muid, '+FLAGS', '(|Deleted)' )
+      mail.expunge()
+    return True
+  else:
+    return False
+
+def func_get_md5sum( str_file ):
+  # Get the md5sum of a file
+  hash_cur = haslib.md5()
+  with open( str_file, 'rb' ) as str_md5_file:
+    buf_cur = str_md5_file.read( C_I_BLOCKSIZE )
+    while len( buf_cur ) > 0:
+      hash_cur.update( buf_cur )
+      buf_cur = str_md5_file.read( C_I_BLOCKSIZE )
+  return( hash_cur.hexdigest( ) )
 
 # Connect to mail and get inbox
 mail = imaplib.IMAP4_SSL("imap.gmail.com")
 mail.login( str_account, str_password )
 mail.select( str_mail_box )
-
-# Read previously archived files
-# { Walkup id : username }
-dict_known_files = {}
-if os.path.exists( str_archive_file ):
-  with open( str_archive_file ) as hndl_archive:
-    dict_known_files = dict( hndl_archive.read() )
 
 # Get all the mail and get ids
 result, data = mail.uid( "search", None, "(HEADER Subject \""+str_subject_key+"\")" )
@@ -75,9 +91,13 @@ for cur_data in data:
   f_success = func_archive( str_message )
 
   if not f_success:
-    # Otherwise log error 
-    with open( str_error_log, "a" ) as hndl_error:
+  # Otherwise log error 
+  with open( str_error_log, "a" ) as hndl_error:
+    if f_success:
       hndl_error.write( "Failed to archive. Walkup id: " + str_walkup + ", User: " + str_user_name + ", Date: " +  str( datetime.datetime.now() ) + "\n" )
+      func_email_success( str_user_name )
+    else:
+      hndl_error.write( "Successful archive. Walkup id: " + str_walkup + ", User: " + str_user_name + ", Date: " +  str( datetime.datetime.now() ) + "\n" )
 
 # Disconnect
 mail.logout()
