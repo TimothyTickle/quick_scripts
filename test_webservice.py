@@ -98,6 +98,7 @@ for i_request in random.sample( range( 0, len( llstr_vcf ) ), i_total_number_of_
 # Write to file
 dt_cur = datetime.datetime.now()
 str_file_name = "_".join( [ str( dt_cur.month ), str( dt_cur.day ), str( dt_cur.year ), "h", str( dt_cur.hour ), "m", str( dt_cur.minute ), "s", str( dt_cur.second ) ] ) + ".dat" 
+str_file_name = os.path.join( os.path.dirname( args_call.str_vcf ), str_file_name )
 with open( str_file_name, "w" ) as hndl_data:
   hndl_data.write( str( lstr_entries ) + "\n" )
   hndl_data.write( str( li_pos_strand ) + "\n" )
