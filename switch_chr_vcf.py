@@ -18,7 +18,7 @@ VCF_CHR = "chr"
 I_VCF_CHR = len( VCF_CHR )
 
 # Indicates if the VCF_CHR should be added
-f_add_vcf_chr = False
+f_add_vcf_chr = None
 
 def func_starts_with( str_starting_token, str_word ):
   i_token = len( str_starting_token )
@@ -35,8 +35,8 @@ args = prsr_arguments.parse_args()
 # Handle normal vcf.gz or vcf files
 str_in_ext = os.path.splitext( args.str_input_file )[ 1 ]
 str_out_ext = os.path.splitext( args.str_output_file )[ 1 ]
-handle_old_vcf = gzip.open( args.str_input_file ) if str_in_ext == "gz" else open( args.str_input_file, "r" )
-handle_new_vcf = gzip.open( args.str_output_file ) if str_out_ext == "gz" else open( args.str_output_file, "w" )
+handle_old_vcf = gzip.open( args.str_input_file, "rb" ) if str_in_ext == ".gz" else open( args.str_input_file, "r" )
+handle_new_vcf = gzip.open( args.str_output_file, "wb" ) if str_out_ext == ".gz" else open( args.str_output_file, "w" )
 
 # Read through the vcf
 # Update the header info ( nomenclature )
@@ -51,6 +51,7 @@ for str_line in handle_old_vcf:
       str_name, str_length = lstr_contig_tokens[ 1 ].split( "," )
       if func_starts_with( str_starting_token=VCF_CHR, str_word=str_name ):
         str_name = str_name[ I_VCF_CHR : ] 
+        f_add_vcf_chr = False
       else:
         str_name = VCF_CHR + str_name
         f_add_vcf_chr = True
@@ -58,6 +59,9 @@ for str_line in handle_old_vcf:
     # Store comments
     handle_new_vcf.write( str_line )
   else:
+    # Incase there was no contig info in the header
+    if f_add_vcf_chr is None:
+      f_add_vcf_chr = not func_starts_with( str_starting_token=VCF_CHR, str_word=str_line )
     # Update feature entry
     if f_add_vcf_chr:
       if not func_starts_with( str_starting_token=VCF_CHR, str_word=str_line ):
