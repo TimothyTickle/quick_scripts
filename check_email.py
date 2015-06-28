@@ -12,9 +12,15 @@ import os
 
 # Conf file constants (keys)
 C_STR_ADMIN_EMAIL = "admin_email:"
+C_STR_BODY_PASSWORD = "Password:"
+C_STR_BODY_URL = "URL:"
+C_STR_BODY_USERNAME = "Username:"
 C_STR_CONFIG_FILE = "email_dev.conf"
 C_STR_DONE_BOX = "archive_email_box:"
 C_STR_EMAIL = "email:"
+C_STR_EMAIL_BODY_DELIMITER = "\r\n"
+C_STR_EMAIL_CONTENT = "Content-Type:"
+C_STR_EMAIL_TEXT = "text/plain"
 C_STR_ERROR_BOX = "Error_email_box:"
 C_STR_LOCATION = "location:"
 C_STR_LOCK_FILE = "archive.running"
@@ -22,6 +28,7 @@ C_STR_LOG_FILE = "archiving.log"
 C_STR_MAIL_BOX = "inbox:"
 C_STR_OUTBOUND_SMTP_SERVER = "SMTP_Server:"
 C_STR_PASSWORD = "password:"
+C_STR_PROGRAM_NAME = "Email Archiver v1.0"
 C_STR_SUBJECT_KEYWORD = "subject_key:"
 C_STR_USER = "user:"
 C_STR_USER_NAME_KEYWORD = "user_key:"
@@ -31,11 +38,10 @@ class IMAPEmail( object ):
   """
   Object that manages all the IMAP email interactions here used for gmail.
   """
-
+  # OK
   def __init__( self, str_mail_box, str_user, str_password ):
     """
-    Attempts a connect to the account. If not no other functionality will work.
-
+    Attempts a connect to the account. If failed, no other functionality will work.
     * str_mail_box : String
                      Email mailbox name
     * str_user : String
@@ -43,19 +49,16 @@ class IMAPEmail( object ):
     * str_password : String
                      Password for email login
     """
-
     self.f_attached = False
     self.mail = self.func_login( str_login_mail_box=str_mail_box, 
                             str_login_user=str_user, 
                             str_login_password=str_password, 
                             str_login_imap_domain="imap.gmail.com" )
-    self.f_attached = True
-
+  # OK
   def func_login( self, str_login_mail_box, str_login_user, str_login_password, str_login_imap_domain ):
     """
     Logins into a specific email.
     Any previous email connection is logged out.
-
     * str_login_mail_box : String
                            Mail box to log into
     * str_login_user : String
@@ -66,83 +69,103 @@ class IMAPEmail( object ):
                               The email services' IMAP domain
     * return : Connection to mailbox
     """
-
     # logout previous
     if self.f_attached:
       self.mail.disconnect()
-      self.f_attached = False
-    
     # Connect to mail and get inbox
     mail = imaplib.IMAP4_SSL( str_login_imap_domain )
     mail.login( str_login_user, str_login_password )
+    self.f_attached = True
     mail.select( str_login_mail_box )
     return mail
-
+  # OK
   def func_get_uid_by_subject_key( self, str_subject_key ):
     """
     Returns uids of mail that match a keyword in their subject.
-
     str_subject_key : String
                       Subject key to pull mail uids
     return : Returns a tuple result, data or on error None, None
     """
-
     if self.mail:
-      return self.mail.uid( "search", None, "(HEADER Subject \""+str_subject_key+"\")" )
+      return self.mail.search(  None, "(Subject \""+str_subject_key+"\")" )
     else:
       return None, None
-
-  def func_move_email_to_box( self, uid_email, str_new_folder ):
+  # OK
+  def func_get_email_body_by_uid( self, str_uid ):
+    """
+    Returns the email body text by UID.
+    str_suid : String
+               Returns email body buy UID
+    return : Returns string email body or empty string on failure
+    """
+    f_store_text = False
+    lstr_return_string = []
+    if self.mail:
+      typ, msg_data = self.mail.fetch(  str_uid, "(BODY.PEEK[TEXT])" )
+      for x_section in msg_data:
+        if isinstance( x_section, tuple ):
+          for str_line in  x_section[ 1 ].split( C_STR_EMAIL_BODY_DELIMITER ):
+            if ( C_STR_EMAIL_CONTENT in str_line ):
+              if( C_STR_EMAIL_TEXT in str_line ):
+                f_store_text = True
+              else:
+                f_store_text = False
+            if f_store_text:
+              lstr_return_string.append( str_line )
+      return C_STR_EMAIL_BODY_DELIMITER.join( lstr_return_string )
+    else:
+      return C_STR_EMAIL_BODY_DELIMITER.join( lstr_return_string )
+  # OK
+  def func_move_email_to_box( self, str_uid_email, str_old_folder, str_new_folder ):
     """
     Moves an email to a certain box and then deletes the email from the
     original box. Returns a True on success and a False on Failure.
-
-    uid_email : uid (string)
+    str_uid_email : uid (string)
                 Id identifying an email
+    str_old_folder : String
+                   : Folder to move email from
     str_new_folder : String
                      Folder to move email to 
     return : Logical (True on success)
     """
-    if self.mail:
-      list_ret_copy = self.mail.uid( 'COPY', str_muid, str_new_folder )
+    
+    if self.mail and not str_uid_email and not str_old_folder and str_new_folder:
+      self.mail.select( str_old_folder )
+      list_ret_copy = self.mail.copy( str_uid_email, str_new_folder )
+      # TODO For some reason I am getting OK if I am in the wrong email box and try to move something. The email does not move but it says it does.
       if list_ret_copy[ 0 ] == "OK":
-        self. mail.uid( 'STORE', str_muid, '+FLAGS', '(|Deleted)' )
+        self.mail.store( str_uid_email, "+FLAGS", r'(\DELETED)' )
         self.mail.expunge()
         return True
       else:
         return False
     else:
       return False
-
+  # OK
   def func_disconnect( self ):
      """
      Disconnects from current imap connection.
      """
-
      # Disconnect
      self.mail.logout()
-
+     self.f_attached = False
 
 class EmailArchiver( object ):
   """
   Performs the archiving of samples associated with emails and then moves completed emails to the completed box.
   """
-
+  # Ok
   def __init__( self, str_config_file ):
     """
     Reads in a config file and opens a connection to the email in the config file.
-
     str_config_file : Str file path
                       Config file that is used to initialize the class.
     """
-
     # MD5SUM block size
     self.C_I_BLOCKSIZE = 128
-
     # Parse config file
     self.str_config_file = str_config_file
     self.dict_credentials = self.func_read_conf_file( str_file_path=str_config_file )
-
     # Open connection to email
     if ( self.dict_credentials and self.dict_credentials.get( C_STR_MAIL_BOX, None ) and 
          self.dict_credentials.get( C_STR_USER, None ) and self.dict_credentials.get( C_STR_PASSWORD, None ) ):
@@ -152,6 +175,8 @@ class EmailArchiver( object ):
     else:
       self.cur_connection = None
       self.cur_log_hndl = None
+    # Set up logger for the archiving system
+    self.logr = logging.getLogger( C_STR_PROGRAM_NAME )
 
   def func_archive( self, str_uid ):
     """
@@ -181,29 +206,27 @@ class EmailArchiver( object ):
         return False
 
       # Get email body
-      result, data = self.cur_connection.uid("fetch", str_uid, "(BODY[TEXT])" )
+      str_message = self.cur_connection.func_get_email_body_by_uid(str_uid)
       hndl_mail_logger.write( self.func_now()+"::check_email::INFO:: Retrieved email body.\n" )
-      # TODO check result
 
-      # parse email body for info
-      str_message = data[0][1]
-      ## Get walkup id
-      i_walkup_index_start = str_message.find( self.dict_credentials.get( C_STR_SUBJECT_KEYWORD, None ) )
-      i_walkup_index_stop = str_message[ i_walkup_index_start:].find( "\r\n" ) + i_walkup_index_start
-      str_walkup = str_message[ i_walkup_index_start + len( self.dict_credentials.get( C_STR_SUBJECT_KEYWORD, None ) ) : i_walkup_index_stop ]
-      ## Get user name
-      i_user_name_index_start = str_message.find( self.dict_credentials.get( C_STR_USER_KEYWORD, None ) )
-      i_user_name_index_stop = str_message[ i_user_name_index_start:].find( "\r\n" ) + i_user_name_index_start
-      str_user_name =  str_message[ i_user_name_index_start + len( self.dict_credentials.get( C_STR_USER_KEYWORD, None )  ) : i_user_name_index_stop ]
-      ## Get DATA TODO
-      # str_move_from_path =
+      ## Get MiSEQ credentials
+      dict_email_tokens = self.func_parse_email_body( str_message )
+      str_url = dict_email_tokens[ C_STR_BODY_URL ]
+      str_password = dict_email_tokens[ C_STR_BODY_PASSWORD ]
+      str_user_name = dict_email_tokens[ C_STR_BODY_USERNAME ]
+      if not str_url or not str_password or not str_user_name:
+        str_password_error = "NOT EMPTY" if str_password else "EMPTY"
+        hndl_mail_logger.write( self.func_now()+"::check_email::ERROR:: Did not get credentials from walkup sequencing email." )
+        hndl_mail_logger.write( self.func_now()+"::check_email::ERROR:: URL="+str_url)
+        hndl_mail_logger.write( self.func_now()+"::check_email::ERROR:: USERNAME="+str_user_name)
+        hndl_mail_logger.write( self.func_now()+"::check_email::ERROR:: PASSWORD="+str_password_error)
 
       # Move associated data
       hndl_mail_logger.write( self.func_now()+"::check_email::INFO:: Start moving from "+str_move_from_path+" to "+self.dict_credentials.get( C_STR_LOCATION, None )+"\n" )
       str_copy_dir = func_archive_data( str_move_from_path, self.dict_credentials.get( C_STR_LOCATION, None ) )
       if str_copy_dir:
         hndl_mail_logger.write( self.func_now()+"::check_email::INFO:: Data move was successful. "+str_copy_dir+"\n" )
-        f_email_move_success=self.cur_connection.func_move_email_to_box( uid_email=str_uid, str_new_folder=self.dict_credentials.get( C_STR_DONE_BOX, None ) )
+        f_email_move_success=self.cur_connection.func_move_email_to_box( uid_email=str_uid, str_old_folder=self.dict_credentials.get( C_STR_MAIL_BOX, None), str_new_folder=self.dict_credentials.get( C_STR_DONE_BOX, None ) )
         if f_email_move_success:
           # Log
           hndl_mail_logger.write( self.func_now()+"::check_email::INFO:: Email move was successful.\n" )
@@ -214,7 +237,7 @@ class EmailArchiver( object ):
       else:
         hndl_mail_logger.write( self.func_now()+"::check_email::INFO:: Data move was unsuccessful, notifying admin.\n" )
         self.func_data_fail_alert( str_error_uid=str_uid, str_error_move_path=str_move_from_path, str_original_path=str_move_to_path, str_log=str_email_log_file )
-        self.cur_connection.func_move_email_to_box( uid_email=str_uid, str_new_folder=self.dict_credentials.get( C_STR_ERROR_BOX, None ) )
+        self.cur_connection.func_move_email_to_box( uid_email=str_uid, str_old_folder=self.dict_credentials.get( C_STR_MAIL_BOX, None), str_new_folder=self.dict_credentials.get( C_STR_ERROR_BOX, None ) )
         return False
 
       # Write the mail to archive directory
@@ -222,7 +245,7 @@ class EmailArchiver( object ):
       with open( str_mail_content_file, "w" ) as hndl_mail_content:
         hndl_mail_content.write( str_message+"\n" )
 
-    # Copy the log to the archive
+    # Copy the email log to the archive
     shutil.mv( isrc=str_email_log_file, dst=str_copy_dir )
 
     return True
@@ -249,13 +272,12 @@ class EmailArchiver( object ):
                                          Subject="ERROR Please help me archive this data." )
     # Add Message
     str_email_message = "\n".join( [ "Attempted to archive email id: "+str_error_uid,
-                                     "Archive data from: "+
-                                     "Archive data to: "+
-                                     "Email body:",
-                                     str_meail_body ] )
+                                     "Archive data from: " + str_original_path,
+                                     "Archive data to: " + str_error_move_path,
+                                     "Email body:\n" + str_message_body ] )
     # Add email message
-    mime_message.attach( email.mime.text( str_message_body ) )
-    # Attach log file
+    mime_message.attach( email.mime.text( str_email_message ) )
+    # Attach log file as an attachment
     with open( str_log, "rb" ) as hndl_log:
       mime_message.attach( email.mime.application( hndl_log.read(), 
                                                    Content_Disposition="attachment; filename="+os.path.basename( str_log ) ) )
@@ -265,6 +287,7 @@ class EmailArchiver( object ):
                            self.dict_credentials[ C_STR_ADMIN ],
                            mime_message.as_string() )
     email_server.close()
+
 
   def func_archive_data( self, str_move_from_path, str_move_to_path ):
     """
@@ -294,11 +317,16 @@ class EmailArchiver( object ):
     str_md5sum_moved = self.func_get_md5sum( str_to_path )
 
     # Check the file move
+    # If successful return true but do not delete the old files, they will be deleted as they age out in the directory
+    # If not successful, delete file that was moved if it exists.
     if os.path.exists( str_to_path ) and ( str_md5sum_before == str_md5sum_moved ):
-      # shutil.rm( str_from_path )
       return True
+    else:
+      if os.path.exists( str_to_path ):
+        os.remove( str_to_path )
     return False
 
+  # Checked
   def func_get_md5sum( self, str_file ):
     """
     Get the md5sum of a file
@@ -308,7 +336,7 @@ class EmailArchiver( object ):
     * return : MD5Sum
     """
 
-    hash_cur = haslib.md5()
+    hash_cur = hashlib.md5()
 
     with open( str_file, 'rb' ) as str_md5_file:
       buf_cur = str_md5_file.read( self.C_I_BLOCKSIZE )
@@ -317,6 +345,24 @@ class EmailArchiver( object ):
         buf_cur = str_md5_file.read( self.C_I_BLOCKSIZE )
     return( hash_cur.hexdigest( ) )
 
+  # ok
+  def func_parse_email_body( self, str_email_body ):
+    dict_return = {}
+    if not str_email_body:
+      return dict_return
+    for str_line in str_email_body.split( C_STR_EMAIL_BODY_DELIMITER ):
+      if C_STR_BODY_URL in str_line:
+        dict_return[ C_STR_BODY_URL ] = [ str_token for str_token in str_line.split(" ") if str_token ][1]
+        continue
+      if C_STR_BODY_USERNAME in str_line:
+        dict_return[ C_STR_BODY_USERNAME ] = [ str_token for str_token in str_line.split(" ") if str_token ][1]
+        continue
+     if C_STR_BODY_PASSWORD in str_line:
+         dict_return[ C_STR_BODY_PASSWORD ] = [ str_token for str_token in str_line.split(" ") if str_token ][1]
+         continue
+    return dict_return
+
+  # Read ok
   def func_get_unarchived_emails( self ):
     """
     Retrieves a list of uids for all email that have not yet been archived.
@@ -324,17 +370,23 @@ class EmailArchiver( object ):
     * return : List of uids (strings)
     """
 
+    # Make sure that there is a connection
+    if not self.cur_connection:
+      return None
+
     # List of uids of unarchived emails
     list_ret_uids = []
     # Get unarchived emails
-    result, data = cur_connection.func_get_uid_by_subject_key( str_subject_key=str_subject_key )
-    # TODO Check result
+    result, data = self.cur_connection.func_get_uid_by_subject_key( str_subject_key=str_subject_key )
+    if not data:
+      return list_ret_uids
 
     # Get all the mail ids
     for cur_data in data:
       list_ret_uids.append( cur_data.split()[-1] )
     return list_ret_uids
   
+  # OK
   def func_read_conf_file( self, str_file_path ):
     """
     Read config file and return as a dict.
@@ -352,6 +404,7 @@ class EmailArchiver( object ):
       dict_return = dict([ [ lstr_line[0], lstr_line[1] ] for lstr_line in csvr_cur ])
     return( dict_return )
 
+  # Checked
   def func_now( self ):
     """
     Return formated date and time.
@@ -359,40 +412,52 @@ class EmailArchiver( object ):
     * return : String formated date and time.
     """
 
-    return [ datetime.datetime.isoformat( datetime.datetime.now()).replace( str_token,"_" ) for str_token in [":",".","-"] ]
+    str_stamp = datetime.datetime.isoformat( datetime.datetime.now())
+    for str_token in [":",".","-"]:
+      str_stamp = str_stamp.replace( str_token, "_" )
+    return str_stamp
 
+  # Read ok
   def func_disconnect( self ):
     """
     Disconnect from the email account and close connection.
     """
 
     if self.cur_connection:
-      self.cur_disconnect()
+      self.cur_connection.func_disconnect()
     self.cur_connection = None
 
+
   ###### Lock related functions
+  # These are used to make sure only one process is runing at a time.
+  # This is needed incase there are a lot of files to process and they take more
+  # more time than is given between cron job instatiations of this program.
+  # In that case we would have two processes running on the same data at one time
+  # and the state of the archiving would not be reliable.
+  ######
+  # checked
   def func_lock( self ):
     """
     Lock the archiving system so another archive process can not be ran.
     """
-
     with open( self.C_STR_LOCK_FILE, "w" ) as hndl_lock:
-      hndl_lock.write( date.time.now() )
+      hndl_lock.write( self.func_now() )
 
+  # Checked
   def func_unlock( self ):
     """
     Unlock the archiving system so other processes can be ran.
     """
+    if os.path.exists( self.C_STR_LOCK_FILE ):
+      os.remove( self.C_STR_LOCK_FILE )
 
-    shutil.rm( self.C_STR_LOCK_FILE )
-
+  # checked
   def func_is_locked( self ):
     """
     Check to see if the archiving system is locked by antoehr process.
 
     * return : Logical (True = success)
     """
-
     return os.path.exists( self.C_STR_LOCK_FILE )
 
 
@@ -424,6 +489,8 @@ arch_system = EmailArchiver( str_config_file=C_STR_CONFIG_FILE )
 #    # Log ##TODO
 
 #    ## TODO Run make samples.txt
+
+    # Email user
 
 #  # Unlock archiving system for later use.
 #  arch_system.func_unlock()
