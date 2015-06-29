@@ -128,9 +128,10 @@ class IMAPEmail( object ):
                      Folder to move email to 
     return : Logical (True on success)
     """
-    
     if self.mail and not str_uid_email and not str_old_folder and str_new_folder:
       self.mail.select( str_old_folder )
+      # Check to make sure the uid is in the mailbox
+      print self.mail.search( None, "ALL" )
       list_ret_copy = self.mail.copy( str_uid_email, str_new_folder )
       # TODO For some reason I am getting OK if I am in the wrong email box and try to move something. The email does not move but it says it does.
       if list_ret_copy[ 0 ] == "OK":
