@@ -48,8 +48,8 @@ alreadytransferred = {}
 historicLogHeader = [FILE,MD5_LOG,SIZE_LOG,DATE]
 removefiles = [".DS_Store"]
 
-bamType = [".bam",".bai",".bam.bai"]
-fastqType = ["fastq.gz", "fastq"]
+bamType = ["bam", ".bam", "bam.bai", ".bam.bai", "bai", ".bai"]
+fastqType = ["fastq.gz", ".fastq.gz", "fastq", ".fastq"]
 
 def check_gs_log(logfile):
     read_gs_log(logfile)
@@ -134,11 +134,14 @@ def read_gs_ls(lsfile):
     return(fileinfo)
 
 def exclude_without_keys(fileInfo):
+    removeKeysList = []
     for fileName in fileInfo:
         fileIdsDir = fileName.split("/")[get_dir_parse_index(fileName)]
         if (not "HTAPP-" in fileIdsDir) or (not "-SMP-" in fileIdsDir):
             print("WARNING:: "+fileName+" excluded for not having Keywords 'HTAPP-' or '-SMP-'")
-            del fileInfo[fileName]
+            removeKeysList.append(fileName)
+    for removeKey in removeKeysList:
+        del fileInfo[removeKey]
     return(fileInfo)
 
 def extract_ls_key(ls_line):
@@ -371,6 +374,11 @@ def qc_ids(idFile, ids):
     if idFile is None:
         return(False)
 
+    # First exclude known malformed named (must have keys)
+
+    # Confirm the files have key word in them
+    ids = exclude_without_keys(ids)
+
     success = True
 
     referenceIds = {}
@@ -389,9 +397,8 @@ def qc_ids(idFile, ids):
                 referenceIds[key]=None
     for filename in ids:
         try:
-            parseIndex = get_dir_parse_index(filename)
-            fileId = filename.split("/")[parseIndex]
-            fileId, assay = fileId.split("_")
+            fileId = filename.split("/")[get_dir_parse_index(filename)]
+            fileId, assay = fileId.split("_")[0:2]
             assay_count[assay] = assay_count.setdefault(assay,0) + 1
             if not fileId in referenceIds:
                 print("ERROR:: The following file has an ID that does not match the expected ids.")
@@ -545,9 +552,6 @@ if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
             print("ERROR::Hold ID QC failed")
     else:
         print("WARNING::Hold IDS were not given.")
-
-    # Confirm the files have key word in them
-    transfer = exclude_without_keys(transfer)
 
     # Rename files to the HTAPP Center convention
     currentRenameIds = read_rename_info(args[ARG_RENAME])
