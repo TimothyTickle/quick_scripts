@@ -34,7 +34,11 @@ SOURCE_GS = "Source"
 MD5 = "Md5"
 MD5_GS = "Md5"
 MD5_LOG = "Hash(MD5)"
+ORIGINAL_CASE_ID = "Original-case-id"
+ORIGINAL_SAMPLE_ID = "Original-sample-id"
 RENAME = "rename"
+RENAMED_CASE_ID = "Rename-case-id"
+RENAMED_SAMPLE_ID = "Rename-sample-id"
 RESULT = "Result"
 RESULT_GS = "Result"
 SIZE = "Size"
@@ -50,6 +54,7 @@ removefiles = [".DS_Store"]
 
 bamType = ["bam", ".bam", "bam.bai", ".bam.bai", "bai", ".bai"]
 fastqType = ["fastq.gz", ".fastq.gz", "fastq", ".fastq"]
+exclusionKeys = ["counts_colon"]
 
 def check_gs_log(logfile):
     read_gs_log(logfile)
@@ -133,14 +138,23 @@ def read_gs_ls(lsfile):
                                       SIZE: lslineinfo["Content-Length:"]}
     return(fileinfo)
 
-def exclude_without_keys(fileInfo):
+def exclude_by_keys(fileInfo):
+    """
+    Exlude based on having or not having keys.
+    :param fileInfo: File info with key as file name
+    :return: New abridged file info
+    """
     removeKeysList = []
     for fileName in fileInfo:
+        for excludeKey in exclusionKeys:
+            if excludeKey in fileName:
+                print("WARNING:: "+fileName+" was excluded because it includes the following key. '"+excludeKey+"'.")
+                removeKeysList.append(fileName)
         fileIdsDir = fileName.split("/")[get_dir_parse_index(fileName)]
         if (not "HTAPP-" in fileIdsDir) or (not "-SMP-" in fileIdsDir):
             print("WARNING:: "+fileName+" excluded for not having Keywords 'HTAPP-' or '-SMP-'")
             removeKeysList.append(fileName)
-    for removeKey in removeKeysList:
+    for removeKey in set(removeKeysList):
         del fileInfo[removeKey]
     return(fileInfo)
 
@@ -271,6 +285,9 @@ def rename_files(ids, fileInfo, transferBucket):
         sampleId = "-".join(fileIdsDir[0:2])
         caseId = "-".join(fileIdsDir[2:4])
 
+        fileInfo[fileName][ORIGINAL_SAMPLE_ID] = sampleId
+        fileInfo[fileName][ORIGINAL_CASE_ID] = caseId
+
         if sampleId in ids:
             renamedSampleId = ids[sampleId]
         else:
@@ -288,6 +305,8 @@ def rename_files(ids, fileInfo, transferBucket):
         filePrefix = renamedSampleId + "-" + renamedCaseId + "_"
         fileInfo[fileName][RENAME] = filePrefix + fileBase
         fileInfo[fileName][TRANSFER] = transferBucket + "/" +fileInfo[fileName][RENAME]
+        fileInfo[fileName][RENAMED_SAMPLE_ID] = renamedSampleId
+        fileInfo[fileName][RENAMED_CASE_ID] = renamedCaseId
 
     ids[COUNT_CASES] = caseCount
     ids[COUNT_SAMPLES] = sampleCount
@@ -377,24 +396,14 @@ def qc_ids(idFile, ids):
     # First exclude known malformed named (must have keys)
 
     # Confirm the files have key word in them
-    ids = exclude_without_keys(ids)
+    ids = exclude_by_keys(ids)
 
     success = True
 
-    referenceIds = {}
+    referenceIds = read_reference_ids(idFile)
     returnIds = {}
     assay_count = {}
-    # {(Site, Participant, Case):None}
-    with open(idFile) as idFile:
-        idreader = csv.reader(idFile, delimiter="\t")
-        for row in idreader:
-            key = "-".join([row[1],row[2]])
-            if key in referenceIds:
-                print("ID ERROR:: The following id was entered in multiple times.")
-                print(str(key))
-                success = False
-            else:
-                referenceIds[key]=None
+
     for filename in ids:
         try:
             fileId = filename.split("/")[get_dir_parse_index(filename)]
@@ -449,16 +458,68 @@ def hold_ids(idFile, ids):
             success = False
     return({"success":success, "ids":returnIds})
 
-def write_rename_info(ids, fileName):
+def read_reference_ids(fileName):
+    # {(Site, Participant, Case):None}
+    referenceIds = {}
+    with open(fileName) as idFile:
+        idreader = csv.reader(idFile, delimiter="\t")
+        for row in idreader:
+            key = "-".join([row[1],row[2]])
+            if key in referenceIds:
+                print("ID ERROR:: The following id was entered in multiple times.")
+                print(str(key))
+                success = False
+            else:
+                referenceIds[key]=None
+    return(referenceIds)
+
+def write_rename_info(ids, transfer, fileName):
+    """
+    Write a file that shows the mapping between each patient or each case id and it's htan pairing.
+    :param ids:
+    :param fileName:
+    :return:
+    """
     if ids is None:
+        return()
+    base, ext = os.path.splitext(fileName)
+    keyFileName = base+"-KEY.csv"
+    timeStamp = str(datetime.datetime.today().strftime("%m-%d-%Y-%H-%M-%S"))
+    if os.path.exists(fileName):
+        newName = base + timeStamp + ext
+        shutil.move(fileName,newName)
+    if os.path.exists(keyFileName):
+        newName = base + timeStamp + "-KEY.csv"
+        shutil.move(keyFileName,newName)
+    with open(fileName,"w") as updateIds:
+        content = "\n".join([",".join([str(id),str(ids[id])]) for id in ids.keys()])
+        updateIds.write(content)
+    with open(keyFileName, "w") as updateKeyIds:
+        updateKeyIds.write("Patient Id, Case Id, HTAN Patient Id, HTAN Case Id, HTAN Full Prefix, Transferred File\n")
+        content = "\n".join([",".join([transfer[fileName][ORIGINAL_SAMPLE_ID],
+                                       transfer[fileName][ORIGINAL_CASE_ID],
+                                       transfer[fileName][RENAMED_SAMPLE_ID].split("-")[1],
+                                       transfer[fileName][RENAMED_CASE_ID],
+                                       transfer[fileName][RENAMED_SAMPLE_ID]+"-"+transfer[fileName][RENAMED_CASE_ID],
+                                       transfer[fileName][RENAME]]) for fileName in transfer])
+        updateKeyIds.write(content)
+
+def write_ids_keys(ids, qc_ids, fileName):
+    """
+    Wrtie the "key" file that shows Patient and Case ids together on the same line with the translated HTAN ids.
+    :param ids:
+    :param qc_ids:
+    :param fileName:
+    :return:
+    """
+    if (id_mapping is None) or (htapp_ids is None) or (fileName is None):
+        print("Warning:: Did not get enough information to write the 'key' file.")
         return()
     if os.path.exists(fileName):
         base, ext = os.path.splitext(fileName)
         newName = base + str(datetime.datetime.today().strftime("%m-%d-%Y-%H-%M-%S")) + ext
         shutil.move(fileName,newName)
-    with open(fileName,"w") as updateIds:
-        content = "\n".join([",".join([str(id),str(ids[id])]) for id in ids.keys()])
-        updateIds.write(content)
+
 
 def args_exist(args, argsList):
     for i in argsList:
@@ -556,7 +617,7 @@ if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
     # Rename files to the HTAPP Center convention
     currentRenameIds = read_rename_info(args[ARG_RENAME])
     updatedRenameIds = rename_files(currentRenameIds, transfer, args[ARG_BUCKET_TRANSFER])
-    write_rename_info(updatedRenameIds,args[ARG_RENAME])
+    write_rename_info(updatedRenameIds,transfer, args[ARG_RENAME])
 
     # Make a historic log
     ## File name, Hash (md5), Size, Date
