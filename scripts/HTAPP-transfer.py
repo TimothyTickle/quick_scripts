@@ -243,7 +243,7 @@ def make_historic_log(filename, info, previousinfo, tumor):
     with open(filename, "a") as f:
         f.writelines(os.linesep.join(output))
 
-def make_documentation(outputfile, tumor, data):
+def make_documentation(outputfile, tumor, data, ids):
     ## Type of files
     ## Number files
     ## Total size
@@ -254,11 +254,16 @@ def make_documentation(outputfile, tumor, data):
     files = []
     for d in data:
         # If IDs can not be extracted, then do not document
-        if not split_file_to_id_tokens(os.path.split(d)[-1]) is None:
-            filetypes.append(get_extension(d))
-            numberoffiles = numberoffiles + 1
-            totalsize = totalsize + int(data[d][SIZE])
-            files.append(d + " " + data[d][MD5])
+        updated_file_name=convert_file_name_to_htan_standard(d, ids)
+        if not updated_file_name:
+            print("Warning:: Skipping file for transfer docuentation.")
+            print("Warning:: File Name: "+str(d))
+            continue
+
+        filetypes.append(get_extension(d))
+        numberoffiles = numberoffiles + 1
+        totalsize = totalsize + int(data[d][SIZE])
+        files.append(d + " " + data[d][MD5])
 
     filetypes = set(filetypes)
     with open(outputfile, "w") as f:
@@ -276,10 +281,7 @@ def make_gsutil_command(outputfile, bucket, transferbucket, data, file_ids):
         file_tokens = info.split("/")
         file_name = file_tokens[-1]
 
-        add_id_to_htan_id_map(file_name=file_name,
-                                      id_map=file_ids)
-
-        updated_file_name=convert_file_name_to_htan_standard(file_name,file_ids)
+        updated_file_name=convert_file_name_to_htan_standard(info, file_ids)
         if not updated_file_name:
             print("Warning:: Skipping file for transfer.")
             print("Warning:: File Name: "+str(file_name))
@@ -416,48 +418,21 @@ def split_file_to_id_tokens(file_name):
         return None
     return(file_tokens)
 
+def handle_special_case_file(file_name, id_map):
 
-def add_id_to_htan_id_map(file_name, id_map = {}):
-    """
-    This takes standard names with internal case and sample ids and adds them to a map
-    to connect them to a HTAPP DCC standard file name
-    :return:
-    """
-
-    # Ignore empty values
-    if file_name is None or file_name.strip() == "":
-        return True
-
-    file_tokens = split_file_to_id_tokens(file_name)
-    if file_tokens is None:
-        print("WARNING:: Skipped file, could not extract ID.")
-        print("WARNING:: File name: "+str(file_name))
-        return False
-
-    htapp_id = file_tokens[0] + "-" + file_tokens[1]
-    smp_id = file_tokens[2] + "-" + file_tokens[3]
-
-    if htapp_id not in id_map:
-        new_htapp_id = id_map.get(ID_TOP_COUNT, 0) + 1
-        if new_htapp_id in id_map.values():
-            print("ERROR:: Tried to insert a duplicate HTAPP id.")
-            print("ERROR:: ID "+str(new_htapp_id))
-            print("ERROR:: Map="+str(id_map))
-            return False
-        else:
-            id_map[htapp_id]=new_htapp_id
-            id_map[ID_TOP_COUNT]=new_htapp_id
-    if smp_id not in id_map:
-        new_SMP_id = id_map.get(ID_TOP_COUNT, 0) + 1
-        if new_SMP_id in id_map.values():
-            print("ERROR:: Tried to insert a duplicate SMO id.")
-            print("ERROR:: ID "+str(new_SMP_id))
-            print("ERROR:: Map="+str(id_map))
-            return False
-        else:
-            id_map[smp_id]=new_SMP_id
-            id_map[ID_TOP_COUNT]=new_SMP_id
-    return True
+    # handle possorted files
+    base_name = os.path.basename(file_name)
+    if  base_name in ["possorted_genome_bam.bam","possorted_genome_bam.bam.bai"] :
+        file_path_tokens = file_name.split("/")
+        tokens = split_file_to_id_tokens(file_path_tokens[-2])
+        # Add prefix
+        new_file_name = HTAPP_PILOT_PROJECT+"_"+str(id_map[tokens[0]+"-"+tokens[1]])+"_"+str(id_map[tokens[2]+"-"+tokens[3]])
+        # Add Ids
+        new_file_name = new_file_name+"_"+str(tokens[0]+"-"+tokens[1])+"-"+str(tokens[2]+"-"+tokens[3])
+        # Add original name
+        new_file_name = new_file_name+"-"+base_name
+        return new_file_name
+    return None
 
 
 def convert_file_name_to_htan_standard(file_name, id_map):
@@ -471,11 +446,16 @@ def convert_file_name_to_htan_standard(file_name, id_map):
     if file_name is None or file_name.strip() == "":
         return False
 
-    tokens = split_file_to_id_tokens(file_name)
-    if not tokens is None:
-        htan_prefix = HTAPP_PILOT_PROJECT+"_" +str(id_map[tokens[0]+"-"+tokens[1]])+"_"+str(id_map[tokens[2]+"-"+tokens[3]])
-        return htan_prefix+"_"+file_name
-    return None
+    new_file_name = handle_special_case_file(file_name, id_map)
+
+    # Normal case
+    if new_file_name is None:
+        file_name_base = os.path.basename(file_name)
+        tokens = split_file_to_id_tokens(file_name_base)
+        if not tokens is None:
+            htan_prefix = HTAPP_PILOT_PROJECT+"_" +str(id_map[tokens[0]+"-"+tokens[1]])+"_"+str(id_map[tokens[2]+"-"+tokens[3]])
+            new_file_name = htan_prefix+"_"+file_name_base
+    return new_file_name
 
 
 def read_map_file(map_file_name):
@@ -490,40 +470,28 @@ def read_map_file(map_file_name):
     if map_file_name is None or map_file_name.strip() == "":
         return None
     if not os.path.exists(map_file_name):
-        print("INFO:: The mapping file does not exist. Starting a new one.")
-        print("INFO:: Generating IDS new with no history of previous assignments.")
-        return map_file
+        print("ERROR:: The mapping file does not exist. Mapping file must be provided.")
+        print("ERROR:: Stopped with error.")
+        exit(302)
 
     with open(map_file_name) as map_file_reader:
         for line in map_file_reader:
             if line is None or line.strip() == "":
                 continue
-            tokens = line.split("\t")
-            tokens = [token.strip("\t\r\n ") for token in tokens]
-            map_file[tokens[0]]= tokens[1]
+            tokens=line.split("\t")
+            tokens=[token.strip("\t\r\n ") for token in tokens]
+            if tokens[0] in map_file:
+                print("ERROR:: The mapping file contains duplicate HTAPP/SMP ids, they must be unique.")
+                print("ERROR:: ID="+str(tokens[0]))
+                print("ERROR:: Stopped with error.")
+                exit(306)
+            if tokens[1] in map_file.values():
+                print("ERROR:: The mapping file contains duplicate HTAN ids, they must be unique.")
+                print("ERROR:: ID="+str(tokens[1]))
+                print("ERROR:: Stopped with error.")
+                exit(307)
+            map_file[tokens[0]]=tokens[1]
     return map_file
-
-def write_map_file(map_file_name, map_ids):
-    """
-    Write ids to file
-    :param map_file_name: File to write to
-    :param map_ids: Mapped ids {HTAPP_id=HTAN_DCC id}
-    :return: boolean (True is success)
-    """
-    print('Writing Map File: map_file_name='+str(map_file_name))
-    if map_file_name is None or map_file_name.strip() == "":
-        return False
-
-    if os.path.exists(map_file_name):
-        map_base, map_ext = os.path.splitext(map_file_name)
-        safe_name = map_base+"-"+str(datetime.datetime.today().strftime("%m-%d-%Y-%H-%M-%S"))+map_ext
-        shutil.move(map_file_name, safe_name)
-
-    with open(map_file_name,"w") as map_file:
-        for htapp_id in map_ids:
-            map_file.writelines(str(htapp_id)+"\t"+str(map_ids[htapp_id])+"\n")
-    return True
-
 
 def args_exist(args, argsList):
     for i in argsList:
@@ -646,11 +614,11 @@ if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
                         data=transfer,
                         file_ids=file_ids_map)
 
-    # Write mapped id to file
-    write_map_file(map_file_name=args[ARG_ID_MAP], map_ids=file_ids_map)
-
     # Make documentation
-    make_documentation(args[ARG_DOCUMENT], args[ARG_TUMOR_BASE], transfer)
+    make_documentation(outputfile=args[ARG_DOCUMENT],
+                       tumor=args[ARG_TUMOR_BASE],
+                       data=transfer,
+                       ids=file_ids_map)
     if success:
         print("ENDING:: Completed documentation and reporting with no error.")
         exit(0)
