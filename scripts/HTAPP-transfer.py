@@ -7,20 +7,24 @@ import os
 import shutil
 
 ARG_BUCKET_TRANSFER = "bucket"
-ARG_CHECK_LOG = "check"
+#ARG_CHECK_LOG = "check"
 ARG_DOCUMENT = "document_out"
-ARG_GSLOG_CONV = "log2hist"
+#ARG_GSLOG_CONV = "log2hist"
 ARG_GSUTIL_CMD = "cmd_out"
 ARG_ID_QC = "qc_ids"
 ARG_ID_HOLD = "hold_ids"
 ARG_ID_MAP = "map_ids"
 ARG_LS_TRANSFER = "ls"
-ARG_OUT = "output"
+#ARG_OUT = "output"
 ARG_RENAME = "rename"
+ARG_RESTRICT_TO_BULK_DNA = "only_bulk_dna_bams"
+ARG_RESTRICT_TO_BULK_RNA = "only_bulk_rna_bams"
+ARG_RESTRICT_TO_SC_RNA = "only_sc_rna_bams"
 ARG_RUNNING_LOG = "hist"
 ARG_TEMP_RUNNING_LOG = "hist_temp"
 ARG_TRANS_BAM = "transfer_bam"
 ARG_TRANS_FASTQ = "transfer_fastq"
+ARG_TRANS_MATRIX = "transfer_matrix"
 ARG_TUMOR_BASE = "tumor"
 
 DATE = "Date"
@@ -49,36 +53,38 @@ removefiles = [".DS_Store"]
 
 bamType = ["bam","bai","bam.bai"]
 fastqType = ["fastq.gz", "fastq"]
+matrixTypeBarcodes = ["barcodes.tsv", "barcodes.tsv.gz"]
+matrixTypeFeatures = ["genes.tsv", "features.tsv.gz"]
+matrixTypeMatrix = ["matrix.mtx", "matrix.mtx.gz"]
+matrixTypeAll = matrixTypeBarcodes+matrixTypeFeatures+matrixTypeMatrix
+matrixTypeExts = ["tsv","tsv.gz","mtx",",mtx.gz"]
 
-def check_gs_log(logfile):
-    read_gs_log(logfile)
-
-def convert_gs_log_to_historic_log(logfile, newfile):
-    convertinfo = {}
-    with open(logfile) as logFile:
-        source, md5, size, dateinfo, result = -1,-1,-1,-1,-1
-        logreader = csv.reader(logFile, delimiter=",")
-        for row in logreader:
-            if source == -1:
-                source = row.index(SOURCE_GS)
-                md5 = row.index(MD5_GS)
-                size = row.index(SIZE_GS)
-                dateinfo = row.index(DATE_GS)
-                result = row.index(RESULT_GS)
-                continue
-
-            # Flag things that were not ok.
-            if not row[result] ==  OK:
-                print("ERROR:: ERROR, the following file is not OK\n" + row[source])
-                exit(303)
-
-            convertinfo[row[source]] = {SOURCE:row[source], MD5:row[md5], SIZE:row[size], DATE:row[dateinfo]}
-    with open(newfile, "w") as f:
-        f.write(HISTORIC_LOG_DEL.join(historicLogHeader)+"\n")
-    with open(newfile, "a") as f:
-        logwriter = csv.DictWriter(f,fieldnames=[SOURCE,MD5,SIZE,DATE], delimiter=HISTORIC_LOG_DEL)
-        for fileinfo in convertinfo:
-            logwriter.writerow(convertinfo[fileinfo])
+#def convert_gs_log_to_historic_log(logfile, newfile):
+#    convertinfo = {}
+#    with open(logfile) as logFile:
+#        source, md5, size, dateinfo, result = -1,-1,-1,-1,-1
+#        logreader = csv.reader(logFile, delimiter=",")
+#        for row in logreader:
+#            if source == -1:
+#                source = row.index(SOURCE_GS)
+#                md5 = row.index(MD5_GS)
+#                size = row.index(SIZE_GS)
+#                dateinfo = row.index(DATE_GS)
+#                result = row.index(RESULT_GS)
+#                continue
+#
+#            # Flag things that were not ok.
+#            if not row[result] ==  OK:
+#                print("ERROR:: ERROR, the following file is not OK\n" + row[source])
+#                exit(303)
+#
+#            convertinfo[row[source]] = {SOURCE:row[source], MD5:row[md5], SIZE:row[size], DATE:row[dateinfo]}
+#    with open(newfile, "w") as f:
+#        f.write(HISTORIC_LOG_DEL.join(historicLogHeader)+"\n")
+#    with open(newfile, "a") as f:
+#        logwriter = csv.DictWriter(f,fieldnames=[SOURCE,MD5,SIZE,DATE], delimiter=HISTORIC_LOG_DEL)
+#        for fileinfo in convertinfo:
+#            logwriter.writerow(convertinfo[fileinfo])
 
 def read_gs_log(logfile):
     error = False
@@ -211,20 +217,20 @@ def get_dir_parse_index(filepath):
         return(5)
     return(4)
 
-def read_historic_log(hisfile):
-    convertinfo = {}
-    with open(hisfile) as logFile:
-        file, md5, size, dateinfo = -1,-1,-1,-1
-        logreader = csv.reader(logFile, delimiter=HISTORIC_LOG_DEL)
-        for row in logreader:
-            if file == -1:
-                file = row.index(FILE)
-                md5 = row.index(MD5_LOG)
-                size = row.index(SIZE_LOG)
-                dateinfo = row.index(DATE)
-                continue
-            convertinfo[row[file]] = {SOURCE:row[file], MD5:row[md5], SIZE:row[size], DATE:row[dateinfo]}
-    return(convertinfo)
+#def read_historic_log(hisfile):
+#    convertinfo = {}
+#    with open(hisfile) as logFile:
+#        file, md5, size, dateinfo = -1,-1,-1,-1
+#        logreader = csv.reader(logFile, delimiter=HISTORIC_LOG_DEL)
+#        for row in logreader:
+#            if file == -1:
+#                file = row.index(FILE)
+#                md5 = row.index(MD5_LOG)
+#                size = row.index(SIZE_LOG)
+#                dateinfo = row.index(DATE)
+#                continue
+#            convertinfo[row[file]] = {SOURCE:row[file], MD5:row[md5], SIZE:row[size], DATE:row[dateinfo]}
+#    return(convertinfo)
 
 def make_historic_log(filename, info, previousinfo, tumor):
     if filename is None:
@@ -256,7 +262,7 @@ def make_documentation(outputfile, tumor, data, ids):
         # If IDs can not be extracted, then do not document
         updated_file_name=convert_file_name_to_htan_standard(d, ids)
         if not updated_file_name:
-            print("Warning:: Skipping file for transfer docuentation.")
+            print("Warning:: Skipping file for transfer documentation.")
             print("Warning:: File Name: "+str(d))
             continue
 
@@ -331,7 +337,6 @@ def qc_ids(idFile, ids):
             else:
                 referenceIds[key]=None
     for filename in ids:
-#        try:
         parseIndex = get_dir_parse_index(filename)
         fileId = filename.split("/")[parseIndex]
         fileId, assay = fileId.split("_")[0:2]
@@ -342,9 +347,6 @@ def qc_ids(idFile, ids):
             success = False
         else:
             returnIds[filename] = ids[filename]
-#        except:
-#            print("ERROR:: the following file is named poorly: "+str(filename))
-#            success = False
     print("INFO:: The following assay counts were found.")
     print(os.linesep.join(["Assay: "+str(key)+"  Count: "+str(count) for key,count in assay_count.items()]))
     return({"success":success, "ids":returnIds})
@@ -386,7 +388,7 @@ def hold_ids(idFile, ids):
     return({"success":success, "ids":returnIds})
 
 
-def split_file_to_id_tokens(file_name):
+def split_file_to_id_tokens(file_name, silent=False):
     """
     Split a file name to the htapp and smp tokens
     :param file_name: File name to tokenize
@@ -401,30 +403,44 @@ def split_file_to_id_tokens(file_name):
     # HTAPP-272-SMP-4831_none_channel1_S1_L003_I1_001.fastq.gz
     file_tokens = file_name.split("_")
     if len(file_tokens) < 2:
-        print("ERROR:: Expected to more than 1 tokens at this step but did not.")
-        print(file_tokens)
-        print(file_name)
+        if not silent:
+            print("ERROR:: Expected to more than 1 tokens at this step but did not.")
+            print(file_tokens)
+            print(file_name)
         return None
     file_tokens = file_tokens[0].split("-")
     if len(file_tokens) != 4:
-        print("ERROR:: Expected to have 4 tokens at this step but did not.")
-        print(file_tokens)
-        print(file_name)
+        if not silent:
+            print("ERROR:: Expected to have 4 tokens at this step but did not.")
+            print(file_tokens)
+            print(file_name)
         return None
     if file_tokens[0] != "HTAPP" or file_tokens[2] != "SMP":
-        print("ERROR:: Failed token check, the first token was expect to be 'HTAPP' and the third 'SMP'.")
-        print(file_tokens)
-        print(file_name)
+        if not silent:
+            print("ERROR:: Failed token check, the first token was expect to be 'HTAPP' and the third 'SMP'.")
+            print(file_tokens)
+            print(file_name)
         return None
     return(file_tokens)
 
+
 def handle_special_case_file(file_name, id_map):
 
-    # handle possorted files
     base_name = os.path.basename(file_name)
-    if  base_name in ["possorted_genome_bam.bam","possorted_genome_bam.bam.bai"] :
-        file_path_tokens = file_name.split("/")
-        tokens = split_file_to_id_tokens(file_path_tokens[-2])
+    file_path_tokens = file_name.split("/")
+    tokens = None
+    # handle possorted files
+    if base_name in ["possorted_genome_bam.bam",
+                     "possorted_genome_bam.bam.bai"]:
+        tokens = split_file_to_id_tokens(file_name=file_path_tokens[-2], silent=False)
+    # Handle matrix files
+    # gs://.../counts_colon/HTAPP-416-SMP-5431_10x/HTAPP-416-SMP-5431_none_channel1/filtered_feature_bc_matrix/features.tsv.gz
+    # gs://.../counts_colon/HTAPP-272-SMP-4831_10x/HTAPP-272-SMP-4831_none_channel1/filtered_gene_bc_matrices/hg19/genes.tsv
+    if base_name in matrixTypeAll:
+        tokens = split_file_to_id_tokens(file_name=file_path_tokens[-3], silent=True)
+        if tokens is None:
+            tokens = split_file_to_id_tokens(file_name=file_path_tokens[-4], silent=True)
+    if not tokens is None:
         # Add prefix
         new_file_name = HTAPP_PILOT_PROJECT+"_"+str(id_map[tokens[0]+"-"+tokens[1]])+"_"+str(id_map[tokens[2]+"-"+tokens[3]])
         # Add Ids
@@ -493,6 +509,83 @@ def read_map_file(map_file_name):
             map_file[tokens[0]]=tokens[1]
     return map_file
 
+def reduce_to_bams_to_molecule_type(BulkDNAOnly=False, BulkRNAOnly=False, SCRNAOnly=False, data=None):
+    """Given naming of files, we try to exclude BAMS that are DNA are RNA if needed."""
+    category_count = sum([1 if category else 0 for category in [BulkDNAOnly, BulkRNAOnly, SCRNAOnly]])
+    if category_count > 1:
+        print("ERROR:: It was request to only include multiple classes of bams. This is contradictory, select only 1. Exited with error")
+        exit(311)
+    if (BulkDNAOnly == False) and (BulkRNAOnly == False) and (SCRNAOnly == False):
+        print("INFO:: no filtering by molecule occurred for BAMs")
+        return data
+    newData = {}
+    if not data is None:
+        print("INFO:: Filtering BAMs by molecule type.")
+        print("INFO:: Filtering Bulk DNA BAMs "+str(BulkDNAOnly))
+        print("INFO:: Filtering Bulk RNA BAMs "+str(BulkRNAOnly))
+        print("INFO:: Filtering Single-cell RNA BAMs "+str(SCRNAOnly))
+        countNotBAM = 0
+        countBulkDNABAM = 0
+        countBulkRNABAM = 0
+        countSCRNABAM = 0
+        for dataFile in data:
+            # If not a BAM allow the file to pass
+            ext = get_extension(dataFile)
+            if not ext in bamType:
+                newData[dataFile]=data[dataFile]
+                countNotBAM = countNotBAM + 1
+                continue
+            # Check Bulk DNA
+            if BulkDNAOnly:
+                if is_BulkDNA_file(dataFile):
+                    newData[dataFile] = data[dataFile]
+                    countBulkDNABAM = countBulkDNABAM + 1
+            # Check Bulk RNA
+            if BulkRNAOnly:
+                if is_BulkRNA_file(dataFile):
+                    newData[dataFile] = data[dataFile]
+                    countBulkRNABAM = countBulkRNABAM + 1
+            # Check Single Cell RNA
+            if SCRNAOnly:
+                if is_SCRNA_file(dataFile):
+                    newData[dataFile] = data[dataFile]
+                    countSCRNABAM = countSCRNABAM + 1
+        print("INFO:: "+str(countNotBAM)+" Files were not bams and so were not filtered.")
+        print("INFO:: "+str(countBulkDNABAM)+" Files Bulk DNA bams were allowed through the filter.")
+        print("INFO:: "+str(countBulkRNABAM)+" Files Bulk RNA bams were allowed through the filter.")
+        print("INFO:: "+str(countSCRNABAM)+" Files Single-cell RNA bams were allowed through the filter.")
+    return newData
+
+def is_BulkDNA_file(fileName):
+    """Given what we know of the name, is this a Bulk DNA file?"""
+    if not fileName:
+        return False
+    file_tokens = fileName.split("/")
+    # Include files with _RnA_ in the base name
+    if "_WES_" in file_tokens[-1]:
+        return True
+    return False
+
+def is_BulkRNA_file(fileName):
+    """Given what we know of the name, is this a Bulk RNA file?"""
+    if not fileName:
+        return False
+    file_tokens = fileName.split("/")
+    # Include files with _RNA_ in the base name
+    if "_RNA_" in file_tokens[-1]:
+        return True
+    return False
+
+def is_SCRNA_file(fileName):
+    """Given what we know of the name, is this a SC RNA file?"""
+    if not fileName:
+        return False
+    file_tokens = fileName.split("/")
+    # Include possorted_genome_bam bams and bais
+    if "possorted_genome_bam" in file_tokens[-1]:
+        return True
+    return False
+
 def args_exist(args, argsList):
     for i in argsList:
         if not i in args:
@@ -504,12 +597,12 @@ def args_exist(args, argsList):
 prsr = argparse.ArgumentParser(prog="Admin scripts for HTAPP transfer")
 subprsr = prsr.add_subparsers(help="Subparser")
 
-prsr_cnv = subprsr.add_parser("convert", help="Convert file formats")
-prsr_cnv.add_argument("--log2hist", metavar=ARG_GSLOG_CONV, help="Gsutil log to convert to a historic log.")
-prsr_cnv.add_argument("--output", metavar=ARG_OUT, help="Output historic file name.")
+#prsr_cnv = subprsr.add_parser("convert", help="Convert file formats")
+#prsr_cnv.add_argument("--log2hist", metavar=ARG_GSLOG_CONV, help="Gsutil log to convert to a historic log.")
+#prsr_cnv.add_argument("--output", metavar=ARG_OUT, help="Output historic file name.")
 
-prsr_check = subprsr.add_parser("check", help="Check gsutil logs after transfer.")
-prsr_check.add_argument("--check", metavar=ARG_CHECK_LOG, help="GSUTIL log to check.")
+#prsr_check = subprsr.add_parser("check", help="Check gsutil logs after transfer.")
+#prsr_check.add_argument("--check", metavar=ARG_CHECK_LOG, help="GSUTIL log to check.")
 
 prsr_doc = subprsr.add_parser("document", help="Generate documentation for transfer.")
 prsr_doc.add_argument("--bucket", metavar=ARG_BUCKET_TRANSFER, help="Bucket to transfer the files to.")
@@ -522,9 +615,13 @@ prsr_doc.add_argument("--document_out", metavar=ARG_DOCUMENT, help="Document fil
 prsr_doc.add_argument("--qc_ids",metavar=ARG_ID_QC, help="HTAPP ID file for QC.")
 prsr_doc.add_argument("--hold_ids",metavar=ARG_ID_HOLD, help="HTAPP ID file for holding.")
 prsr_doc.add_argument("--map_ids",metavar=ARG_ID_MAP, required=True, help="Mapping file for the HTAN DCC to HTAPP/SMP ID mappings.")
+prsr_doc.add_argument("--only_bulk_dna_bams", metavar=ARG_RESTRICT_TO_BULK_DNA, help="Set to 'YES' to restict bams to only known Bulk DNA bams")
+prsr_doc.add_argument("--only_bulk_rna_bams", metavar=ARG_RESTRICT_TO_BULK_RNA, help="Set to 'YES' to restict bams to only known Bulk RNA bams")
+prsr_doc.add_argument("--only_sc_rna_bams", metavar=ARG_RESTRICT_TO_SC_RNA, help="Set to 'YES' to restict bams to only known Single Cell RNA bams")
 prsr_doc.add_argument("--rename", metavar=ARG_RENAME, help="Output file logging the id mapping that occurred.")
 prsr_doc.add_argument("--transfer_fastq",metavar=ARG_TRANS_FASTQ, help="Allow Fastqs to be transferred.")
 prsr_doc.add_argument("--transfer_bam",metavar=ARG_TRANS_BAM, help="Allow bams to be transferred.")
+prsr_doc.add_argument("--transfer_matrix",metavar=ARG_TRANS_MATRIX, help="Allow matrices to be transferred.")
 args = prsr.parse_args()
 args = dict(vars(args))
 
@@ -543,14 +640,14 @@ file_ids_map = {}
 if args_exist(args,[ARG_ID_MAP]):
     file_ids_map = read_map_file(args[ARG_ID_MAP])
 
-# Convert GS_logs if needed
-if args_exist(args,[ARG_GSLOG_CONV, ARG_OUT, ARG_GSLOG_CONV, ARG_OUT]):
-    print("STARTING\nConverting GSUTIL Logs to historic log format.")
-    convert_gs_log_to_historic_log(args[ARG_GSLOG_CONV],args[ARG_OUT])
-    print("INFO:: ENDING: Completed with no error.")
-    exit(0)
-else:
-    print("INFO:: Did not convert GSUTIL Logs to historic logs.")
+## Convert GS_logs if needed
+#if args_exist(args,[ARG_GSLOG_CONV, ARG_OUT, ARG_GSLOG_CONV, ARG_OUT]):
+#    print("STARTING\nConverting GSUTIL Logs to historic log format.")
+#    convert_gs_log_to_historic_log(args[ARG_GSLOG_CONV],args[ARG_OUT])
+#    print("INFO:: ENDING: Completed with no error.")
+#    exit(0)
+#else:
+#    print("INFO:: Did not convert GSUTIL Logs to historic logs.")
 
 # Document and prepare the transfer
 if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
@@ -558,19 +655,37 @@ if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
     print("STARTING\nPreparing documentation and commands for transfer.")
     # Generate report for tumor
     previous = {}
-    if not args[ARG_RUNNING_LOG] is None:
-        previous = read_historic_log(args[ARG_RUNNING_LOG])
-    else:
-        print("INFO:: Skip historic log.")
+#    if not args[ARG_RUNNING_LOG] is None:
+#        previous = read_historic_log(args[ARG_RUNNING_LOG])
+#    else:
+#        print("INFO:: Skip historic log.")
     current = read_gs_ls(args[ARG_LS_TRANSFER])
 
-    # Get the diff
+    # Reduce the files to different molecular readouts
+    bulk_dna_only = False
+    bulk_rna_only = False
+    sc_rna_only = False
+    if args_exist(args,[ARG_RESTRICT_TO_BULK_DNA]) and args[ARG_RESTRICT_TO_BULK_DNA] == "YES":
+        bulk_dna_only = True
+    if args_exist(args,[ARG_RESTRICT_TO_BULK_RNA]) and args[ARG_RESTRICT_TO_BULK_RNA] == "YES":
+        bulk_rna_only = True
+    if args_exist(args, [ARG_RESTRICT_TO_SC_RNA]) and args[ARG_RESTRICT_TO_SC_RNA] == "YES":
+        sc_rna_only = True
+    current = reduce_to_bams_to_molecule_type(BulkDNAOnly=bulk_dna_only,
+                                              BulkRNAOnly=bulk_rna_only,
+                                              SCRNAOnly=sc_rna_only,
+                                              data=current)
+
+    # Reduce the files to correct file types by extension
     transferExtensions = []
-    if args[ARG_TRANS_FASTQ]== "YES":
+    if args_exist(args,[ARG_TRANS_FASTQ]) and args[ARG_TRANS_FASTQ]== "YES":
         transferExtensions.extend(fastqType)
-    if args[ARG_TRANS_BAM] == "YES":
+    if args_exist(args,[ARG_TRANS_BAM]) and args[ARG_TRANS_BAM] == "YES":
         transferExtensions.extend(bamType)
+    if args_exist(args,[ARG_TRANS_MATRIX]) and args[ARG_TRANS_MATRIX] == "YES":
+        transferExtensions.extend(matrixTypeExts)
     transfer = extract_transfer_files(previous,current,transferExtensions)
+
     #QC ids
     if (ARG_ID_QC in args) and (not args[ARG_ID_QC] is None):
         results =  qc_ids(args[ARG_ID_QC], transfer)
@@ -629,10 +744,10 @@ else:
     print("INFO:: Did not prepare documentation.")
 
 # Check transfer
-if args_exist(args,[ARG_CHECK_LOG]):
-    print("STARTING\nChecking GSUTIL log for transfer.")
-    check_gs_log_to_historic_log(args[ARG_CHECK_LOG])
-    print("ENDING::Completed with no error.")
-    exit(0)
-else:
-    print("INFO:: Did not check GSUTIL log for transfer.")
+#if args_exist(args,[ARG_CHECK_LOG]):
+#    print("STARTING\nChecking GSUTIL log for transfer.")
+#    check_gs_log_to_historic_log(args[ARG_CHECK_LOG])
+#    print("ENDING::Completed with no error.")
+#    exit(0)
+#else:
+#    print("INFO:: Did not check GSUTIL log for transfer.")
