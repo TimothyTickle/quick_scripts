@@ -171,6 +171,7 @@ def extract_transfer_files(previousfiles, currentfiles, transferTypes=[]):
             excludedtypes[ext] = excludedtypes.setdefault(ext,0)+1
             continue
 
+
         # Keep files that should be transferred
         ## If the files has not been transferred, transfer
         if not currentfile in previousfiles:
@@ -556,6 +557,27 @@ def reduce_to_bams_to_molecule_type(BulkDNAOnly=False, BulkRNAOnly=False, SCRNAO
         print("INFO:: "+str(countSCRNABAM)+" Files Single-cell RNA bams were allowed through the filter.")
     return newData
 
+def remove_filtered_matrices(currentFiles):
+    """"Remove matrices that are filtered given their names."""
+    filteredFiles = {}
+
+    if not currentFiles:
+        return currentFiles
+    for file in currentFiles:
+        ext = get_extension(file)
+        if ext in matrixTypeExts:
+            fileTokens = file.split("/")
+            if len(fileTokens) >= 3:
+                if fileTokens[-3] == "filtered_gene_bc_matrices":
+                    print("INFO:: Removing file as it is filtered. File="+file)
+                    continue
+            if len(fileTokens) >= 2:
+                if fileTokens[-2] == "filtered_feature_bc_matrix":
+                    print("INFO:: Removing file as it is filtered. File="+file)
+                    continue
+        filteredFiles[file]=currentFiles[file]
+    return filteredFiles
+
 def is_BulkDNA_file(fileName):
     """Given what we know of the name, is this a Bulk DNA file?"""
     if not fileName:
@@ -684,7 +706,12 @@ if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
         transferExtensions.extend(bamType)
     if args_exist(args,[ARG_TRANS_MATRIX]) and args[ARG_TRANS_MATRIX] == "YES":
         transferExtensions.extend(matrixTypeExts)
-    transfer = extract_transfer_files(previous,current,transferExtensions)
+
+    # Reduce matrices to filter files
+    if args_exist(args, [ARG_TRANS_MATRIX]) and args[ARG_TRANS_MATRIX] == "YES":
+        transfer = remove_filtered_matrices(current)
+
+    transfer = extract_transfer_files(previous,transfer,transferExtensions)
 
     #QC ids
     if (ARG_ID_QC in args) and (not args[ARG_ID_QC] is None):
