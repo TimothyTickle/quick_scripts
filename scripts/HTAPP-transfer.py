@@ -708,6 +708,7 @@ if args_exist(args,[ARG_DOCUMENT, ARG_TUMOR_BASE, ARG_BUCKET_TRANSFER,
         transferExtensions.extend(matrixTypeExts)
 
     # Reduce matrices to filter files
+    transfer = current
     if args_exist(args, [ARG_TRANS_MATRIX]) and args[ARG_TRANS_MATRIX] == "YES":
         transfer = remove_filtered_matrices(current)
 
